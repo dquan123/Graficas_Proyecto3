@@ -1,9 +1,16 @@
 const std = @import("std");
-const rl = @import("raylib");
 const Framebuffer = @import("framebuffer.zig").Framebuffer;
+const Texture = @import("texture.zig").Texture;
 
-/// Un vértice ya en pantalla: posición en píxeles e inv_z = 1 / (distancia a la cámara).
-pub const ScreenVertex = struct { x: f32, y: f32, inv_z: f32 };
+/// Un vértice ya en pantalla: posición en píxeles, inv_z = 1 / (distancia a la cámara),
+/// y las coordenadas de textura ya divididas entre z (u_z = u / z, v_z = v / z).
+pub const ScreenVertex = struct {
+    x: f32,
+    y: f32,
+    inv_z: f32,
+    u_z: f32 = 0,
+    v_z: f32 = 0,
+};
 
 /// Guarda, por cada píxel, qué tan cerca está lo último que se pintó (1/z; mayor = más cerca).
 pub const DepthBuffer = struct {
@@ -27,14 +34,14 @@ fn to_px(v: f32, max: f32) i32 {
     return @intFromFloat(@max(0.0, @min(max, v)));
 }
 
-/// Rellena un triángulo con un color, respetando el z-buffer.
+/// Rellena un triángulo con una textura, respetando el z-buffer.
 pub fn fill_triangle(
     fb: *Framebuffer,
     depth: *DepthBuffer,
     a: ScreenVertex,
     b: ScreenVertex,
     c: ScreenVertex,
-    color: rl.Color,
+    tex: Texture,
 ) void {
     // Área (con signo) del triángulo completo
     const area = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
@@ -70,7 +77,11 @@ pub fn fill_triangle(
             const idx = @as(usize, @intCast(y)) * width + @as(usize, @intCast(x));
             if (inv_z > depth.data[idx]) { // más cerca que lo que ya había
                 depth.data[idx] = inv_z;
-                fb.put_pixel(x, y, color);
+
+                // UV con perspectiva correcta: (u/z) / (1/z)
+                const u = (wa * a.u_z + wb * b.u_z + wc * c.u_z) / inv_z;
+                const v = (wa * a.v_z + wb * b.v_z + wc * c.v_z) / inv_z;
+                fb.put_pixel(x, y, tex.sample(u, v));
             }
         }
     }
