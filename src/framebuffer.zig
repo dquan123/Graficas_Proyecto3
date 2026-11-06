@@ -34,6 +34,14 @@ pub const Framebuffer = struct {
         self.color_buff.drawPixel(x, y, self.current_color);
     }
 
+    /// Escribe un píxel directamente en la memoria de la imagen.
+    /// No revisa límites: quien llama debe garantizar que (x, y) está dentro.
+    pub fn put_pixel(self: *Framebuffer, x: i32, y: i32, color: rl.Color) void {
+        const pixels: [*]rl.Color = @ptrCast(@alignCast(self.color_buff.data));
+        const idx = @as(usize, @intCast(y)) * @as(usize, @intCast(self.width)) + @as(usize, @intCast(x));
+        pixels[idx] = color;
+    }
+
     pub fn set_background_color(self: *Framebuffer, color: rl.Color) void {
         self.background_color = color;
     }
