@@ -34,8 +34,10 @@ pub fn main() !void {
     const cam = Camera.look_at(Vec3.init(0, 0, 6), Vec3.init(0, 0, 0), Vec3.init(0, 1, 0), 1.0472, 0.1);
 
     // Esfera chica y cercana primero, grande y lejana después
-    try draw_mesh(&fb, &depth, cam, esfera, Vec3.init(0.9, 0.3, 3.0), 0.7, scratch);
-    try draw_mesh(&fb, &depth, cam, esfera, Vec3.init(0, 0, 0), 2.0, scratch);
+    const chica = try draw_mesh(&fb, &depth, cam, esfera, Vec3.init(0.9, 0.3, 3.0), 0.7, scratch);
+    const grande = try draw_mesh(&fb, &depth, cam, esfera, Vec3.init(0, 0, 0), 2.0, scratch);
+    std.debug.print("esfera chica:  {d} de {d} triangulos dibujados\n", .{ chica, esfera.faces.len });
+    std.debug.print("esfera grande: {d} de {d} triangulos dibujados\n", .{ grande, esfera.faces.len });
 
     while (!rl.windowShouldClose()) {
         try fb.swap_buffers();

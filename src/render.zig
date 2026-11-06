@@ -15,6 +15,7 @@ fn face_color(i: usize) rl.Color {
 
 /// Dibuja un modelo con su centro en `center` y escalado por `scale`.
 /// `scratch` es memoria de trabajo: debe tener espacio para todos los vértices del modelo.
+/// Devuelve cuántos triángulos se dibujaron (los descartados no cuentan).
 pub fn draw_mesh(
     fb: *Framebuffer,
     depth: *raster.DepthBuffer,
@@ -23,7 +24,7 @@ pub fn draw_mesh(
     center: Vec3,
     scale: f32,
     scratch: []Vec3,
-) !void {
+) !usize {
     if (scratch.len < model.positions.len) return error.ScratchTooSmall;
 
     const w: f32 = @floatFromInt(fb.width);
@@ -35,6 +36,7 @@ pub fn draw_mesh(
         scratch[i] = cam.to_camera(world);
     }
 
+    var drawn: usize = 0;
     for (model.faces, 0..) |f, i| {
         const pa = scratch[f.a.pos];
         const pb = scratch[f.b.pos];
@@ -42,6 +44,11 @@ pub fn draw_mesh(
 
         // Si algún vértice está demasiado cerca o detrás de la cámara, se descarta
         if (pa.z < cam.near or pb.z < cam.near or pc.z < cam.near) continue;
+
+        // Back-face culling: normal del triángulo vs. dirección hacia el triángulo.
+        // En este espacio de cámara, los triángulos de frente dan producto punto > 0.
+        const normal = pb.sub(pa).cross(pc.sub(pa));
+        if (normal.dot(pa) <= 0) continue;
 
         raster.fill_triangle(
             fb,
@@ -51,5 +58,7 @@ pub fn draw_mesh(
             cam.project(pc, w, h),
             face_color(i),
         );
+        drawn += 1;
     }
+    return drawn;
 }
