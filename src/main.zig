@@ -11,6 +11,7 @@ const Light = @import("raster.zig").Light;
 const load_obj = @import("obj.zig").load_obj;
 const system = @import("system.zig");
 const Body = system.Body;
+const stars_mod = @import("stars.zig");
 
 const WIDTH: i32 = 800;
 const HEIGHT: i32 = 600;
@@ -21,6 +22,7 @@ const AMBIENT: f32 = 0.10; // brillo mínimo del lado de noche
 const MOUSE_SENSITIVITY: f32 = 0.0025;
 const SPEED: f32 = 12.0; // unidades por segundo
 const SPEED_FAST: f32 = 40.0; // con Shift
+const STAR_COUNT: usize = 4000; //Estrellas
 
 const Clock = std.Io.Clock.real;
 
@@ -58,6 +60,7 @@ pub fn main(init: std.process.Init) !void {
     defer fb.deinit();
 
     var depth = try DepthBuffer.init(gpa, WIDTH, HEIGHT);
+    const stars = try stars_mod.generate(gpa, STAR_COUNT, 20261106);
 
     // Estado de la cámara: arriba y atrás del sistema, mirando hacia el Sol
     var cam_pos = Vec3.init(0, 32, 75);
@@ -120,6 +123,8 @@ pub fn main(init: std.process.Init) !void {
         // --- Dibujar ---
         fb.clear();
         depth.clear();
+        stars_mod.draw_stars(&fb, cam, stars);
+
         // El Sol (cuerpo 0) brilla por sí mismo; los demás reciben su luz
         for (bodies, 0..) |b, i| {
             const light: ?Light = if (i == 0) null else .{
