@@ -6,6 +6,8 @@ const Camera = @import("camera.zig").Camera;
 const DepthBuffer = @import("raster.zig").DepthBuffer;
 const Texture = @import("texture.zig").Texture;
 const draw_mesh = @import("render.zig").draw_mesh;
+const Scratch = @import("render.zig").Scratch;
+const Light = @import("raster.zig").Light;
 const load_obj = @import("obj.zig").load_obj;
 const system = @import("system.zig");
 const Body = system.Body;
@@ -14,6 +16,7 @@ const WIDTH: i32 = 800;
 const HEIGHT: i32 = 600;
 const FOV: f32 = 1.0472; // 60 grados en radianes
 const NEAR: f32 = 0.1;
+const AMBIENT: f32 = 0.10; // brillo mínimo del lado de noche
 
 const MOUSE_SENSITIVITY: f32 = 0.0025;
 const SPEED: f32 = 12.0; // unidades por segundo
@@ -33,7 +36,7 @@ pub fn main(init: std.process.Init) !void {
     const gpa = std.heap.page_allocator;
 
     const esfera = try load_obj(gpa, esfera_obj);
-    const scratch = try gpa.alloc(Vec3, esfera.positions.len);
+    const scratch = try Scratch.init(gpa, esfera.positions.len);
 
     rl.setTraceLogLevel(.warning);
     rl.initWindow(WIDTH, HEIGHT, "Space Travel");
@@ -117,8 +120,13 @@ pub fn main(init: std.process.Init) !void {
         // --- Dibujar ---
         fb.clear();
         depth.clear();
+        // El Sol (cuerpo 0) brilla por sí mismo; los demás reciben su luz
         for (bodies, 0..) |b, i| {
-            _ = try draw_mesh(&fb, &depth, cam, esfera, positions[i], b.radius, b.spin_speed * time, b.texture, scratch);
+            const light: ?Light = if (i == 0) null else .{
+                .dir = positions[0].sub(positions[i]).normalize(),
+                .ambient = AMBIENT,
+            };
+            _ = try draw_mesh(&fb, &depth, cam, esfera, positions[i], b.radius, b.spin_speed * time, b.texture, light, scratch);
         }
         try fb.swap_buffers();
     }

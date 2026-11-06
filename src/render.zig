@@ -1,13 +1,37 @@
+const std = @import("std");
 const Framebuffer = @import("framebuffer.zig").Framebuffer;
 const raster = @import("raster.zig");
 const Camera = @import("camera.zig").Camera;
-const Vec3 = @import("vec3.zig").Vec3;
+const vec = @import("vec3.zig");
+const Vec3 = vec.Vec3;
+const Vec2 = vec.Vec2;
 const Model = @import("obj.zig").Model;
 const Texture = @import("texture.zig").Texture;
 
-/// Dibuja un modelo con su centro en `center`, escalado por `scale` y girado
-/// `rot_y` radianes sobre su eje vertical. Devuelve cuántos triángulos se dibujaron.
-/// `scratch` es memoria de trabajo: debe tener espacio para todos los vértices del modelo.
+/// Memoria de trabajo de draw_mesh, con espacio para los vértices del modelo más grande.
+pub const Scratch = struct {
+    cam: []Vec3, // posición de cada vértice en espacio de cámara
+    normals: []Vec3, // normal de cada vértice en el mundo
+
+    pub fn init(gpa: std.mem.Allocator, n: usize) !Scratch {
+        return .{ .cam = try gpa.alloc(Vec3, n), .normals = try gpa.alloc(Vec3, n) };
+    }
+};
+
+/// Añade al vértice de pantalla sus UV y su normal, ya divididos entre z.
+fn with_attrs(base: raster.ScreenVertex, uv: Vec2, n: Vec3) raster.ScreenVertex {
+    var s = base;
+    s.u_z = uv.x * s.inv_z;
+    s.v_z = uv.y * s.inv_z;
+    s.nx_z = n.x * s.inv_z;
+    s.ny_z = n.y * s.inv_z;
+    s.nz_z = n.z * s.inv_z;
+    return s;
+}
+
+/// Dibuja una ESFERA (el modelo debe ser de radio 1 centrado en el origen) con su centro en
+/// `center`, escalada por `scale` y girada `rot_y` radianes sobre su eje vertical.
+/// `light` null = el cuerpo brilla por sí mismo. Devuelve cuántos triángulos se dibujaron.
 pub fn draw_mesh(
     fb: *Framebuffer,
     depth: *raster.DepthBuffer,
@@ -17,9 +41,11 @@ pub fn draw_mesh(
     scale: f32,
     rot_y: f32,
     tex: Texture,
-    scratch: []Vec3,
+    light: ?raster.Light,
+    scratch: Scratch,
 ) !usize {
-    if (scratch.len < model.positions.len) return error.ScratchTooSmall;
+    const n = model.positions.len;
+    if (scratch.cam.len < n or scratch.normals.len < n) return error.ScratchTooSmall;
 
     const w: f32 = @floatFromInt(fb.width);
     const h: f32 = @floatFromInt(fb.height);
@@ -31,14 +57,16 @@ pub fn draw_mesh(
         // Giro sobre el eje Y, luego escala y posición
         const rotated = Vec3.init(p.x * cos_r + p.z * sin_r, p.y, -p.x * sin_r + p.z * cos_r);
         const world = rotated.scale(scale).add(center);
-        scratch[i] = cam.to_camera(world);
+        scratch.cam[i] = cam.to_camera(world);
+        // En una esfera, la normal de un punto es el vector del centro hacia ese punto
+        scratch.normals[i] = rotated;
     }
 
     var drawn: usize = 0;
     for (model.faces) |f| {
-        const pa = scratch[f.a.pos];
-        const pb = scratch[f.b.pos];
-        const pc = scratch[f.c.pos];
+        const pa = scratch.cam[f.a.pos];
+        const pb = scratch.cam[f.b.pos];
+        const pc = scratch.cam[f.c.pos];
 
         // Si algún vértice está demasiado cerca o detrás de la cámara, se descarta
         if (pa.z < cam.near or pb.z < cam.near or pc.z < cam.near) continue;
@@ -47,21 +75,11 @@ pub fn draw_mesh(
         const normal = pb.sub(pa).cross(pc.sub(pa));
         if (normal.dot(pa) <= 0) continue;
 
-        // Proyección + coordenadas de textura divididas entre z
-        var sa = cam.project(pa, w, h);
-        var sb = cam.project(pb, w, h);
-        var sc = cam.project(pc, w, h);
-        const uva = model.uvs[f.a.uv];
-        const uvb = model.uvs[f.b.uv];
-        const uvc = model.uvs[f.c.uv];
-        sa.u_z = uva.x * sa.inv_z;
-        sa.v_z = uva.y * sa.inv_z;
-        sb.u_z = uvb.x * sb.inv_z;
-        sb.v_z = uvb.y * sb.inv_z;
-        sc.u_z = uvc.x * sc.inv_z;
-        sc.v_z = uvc.y * sc.inv_z;
+        const sa = with_attrs(cam.project(pa, w, h), model.uvs[f.a.uv], scratch.normals[f.a.pos]);
+        const sb = with_attrs(cam.project(pb, w, h), model.uvs[f.b.uv], scratch.normals[f.b.pos]);
+        const sc = with_attrs(cam.project(pc, w, h), model.uvs[f.c.uv], scratch.normals[f.c.pos]);
 
-        raster.fill_triangle(fb, depth, sa, sb, sc, tex);
+        raster.fill_triangle(fb, depth, sa, sb, sc, tex, light);
         drawn += 1;
     }
     return drawn;
