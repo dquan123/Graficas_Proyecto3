@@ -12,6 +12,12 @@ const Body = system.Body;
 
 const WIDTH: i32 = 800;
 const HEIGHT: i32 = 600;
+const FOV: f32 = 1.0472; // 60 grados en radianes
+const NEAR: f32 = 0.1;
+
+const MOUSE_SENSITIVITY: f32 = 0.0025;
+const SPEED: f32 = 12.0; // unidades por segundo
+const SPEED_FAST: f32 = 40.0; // con Shift
 
 const Clock = std.Io.Clock.real;
 
@@ -33,6 +39,7 @@ pub fn main(init: std.process.Init) !void {
     rl.initWindow(WIDTH, HEIGHT, "Space Travel");
     defer rl.closeWindow();
     rl.setTargetFPS(60);
+    rl.disableCursor(); // atrapa el mouse para poder girar sin límite
 
     // Los cuerpos del sistema. El padre debe ir antes que sus hijos (la Luna después de la Tierra).
     const bodies = [_]Body{
@@ -49,8 +56,11 @@ pub fn main(init: std.process.Init) !void {
 
     var depth = try DepthBuffer.init(gpa, WIDTH, HEIGHT);
 
-    // Cámara fija, arriba y atrás, mirando al Sol; FOV de 60 grados (1.0472 rad)
-    const cam = Camera.look_at(Vec3.init(0, 32, 75), Vec3.init(0, 0, 0), Vec3.init(0, 1, 0), 1.0472, 0.1);
+    // Estado de la cámara: arriba y atrás del sistema, mirando hacia el Sol
+    var cam_pos = Vec3.init(0, 32, 75);
+    var yaw: f32 = 0;
+    var pitch: f32 = -0.4;
+    var warmup: u32 = 3; // cuadros iniciales en los que se ignora el mouse
 
     var time: f32 = 0;
     var dt: f32 = 0;
@@ -78,6 +88,33 @@ pub fn main(init: std.process.Init) !void {
         time += dt;
         system.update_positions(&bodies, time, &positions);
 
+        // --- Cámara: mirar con el mouse ---
+        const mouse = rl.getMouseDelta();
+        if (warmup > 0) {
+            warmup -= 1;
+        } else {
+            yaw += mouse.x * MOUSE_SENSITIVITY;
+            pitch -= mouse.y * MOUSE_SENSITIVITY;
+            pitch = @max(-1.5, @min(1.5, pitch));
+        }
+
+        // --- Cámara: moverse con el teclado ---
+        const basis = Camera.from_angles(cam_pos, yaw, pitch, FOV, NEAR);
+        var move = Vec3.init(0, 0, 0);
+        if (rl.isKeyDown(.w)) move = move.add(basis.forward);
+        if (rl.isKeyDown(.s)) move = move.sub(basis.forward);
+        if (rl.isKeyDown(.d)) move = move.add(basis.right);
+        if (rl.isKeyDown(.a)) move = move.sub(basis.right);
+        if (rl.isKeyDown(.e)) move = move.add(Vec3.init(0, 1, 0));
+        if (rl.isKeyDown(.q)) move = move.sub(Vec3.init(0, 1, 0));
+
+        const speed: f32 = if (rl.isKeyDown(.left_shift)) SPEED_FAST else SPEED;
+        const step = @min(dt, 0.05); // un tirón no debe lanzar la cámara lejos
+        cam_pos = cam_pos.add(move.scale(speed * step));
+
+        const cam = Camera.from_angles(cam_pos, yaw, pitch, FOV, NEAR);
+
+        // --- Dibujar ---
         fb.clear();
         depth.clear();
         for (bodies, 0..) |b, i| {

@@ -24,6 +24,23 @@ pub const Camera = struct {
         };
     }
 
+    /// Cámara en `position` orientada con yaw (izquierda/derecha) y pitch (arriba/abajo).
+    /// Con yaw = 0 y pitch = 0 mira hacia -Z.
+    pub fn from_angles(position: Vec3, yaw: f32, pitch: f32, fov_y: f32, near: f32) Camera {
+        const cos_p = @cos(pitch);
+        const forward = Vec3.init(@sin(yaw) * cos_p, @sin(pitch), -@cos(yaw) * cos_p);
+        const right = Vec3.init(@cos(yaw), 0, @sin(yaw));
+        const up = right.cross(forward);
+        return .{
+            .position = position,
+            .right = right,
+            .up = up,
+            .forward = forward,
+            .fov_y = fov_y,
+            .near = near,
+        };
+    }
+
     /// Mundo -> cámara: x a la derecha, y arriba, z = distancia hacia adelante.
     pub fn to_camera(self: Camera, p: Vec3) Vec3 {
         const d = p.sub(self.position);
