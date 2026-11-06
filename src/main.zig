@@ -7,6 +7,8 @@ const DepthBuffer = @import("raster.zig").DepthBuffer;
 const Texture = @import("texture.zig").Texture;
 const draw_mesh = @import("render.zig").draw_mesh;
 const load_obj = @import("obj.zig").load_obj;
+const system = @import("system.zig");
+const Body = system.Body;
 
 const WIDTH: i32 = 800;
 const HEIGHT: i32 = 600;
@@ -15,7 +17,11 @@ const Clock = std.Io.Clock.real;
 
 // Modelos y texturas se meten dentro del programa al compilar (src/assets/)
 const esfera_obj = @embedFile("assets/esfera.obj");
+const sol_png = @embedFile("assets/sol.png");
 const tierra_png = @embedFile("assets/tierra.png");
+const luna_png = @embedFile("assets/luna.png");
+const marte_png = @embedFile("assets/marte.png");
+const jupiter_png = @embedFile("assets/jupiter.png");
 
 pub fn main(init: std.process.Init) !void {
     const gpa = std.heap.page_allocator;
@@ -28,17 +34,25 @@ pub fn main(init: std.process.Init) !void {
     defer rl.closeWindow();
     rl.setTargetFPS(60);
 
-    const tierra = try Texture.from_png(tierra_png);
+    // Los cuerpos del sistema. El padre debe ir antes que sus hijos (la Luna después de la Tierra).
+    const bodies = [_]Body{
+        .{ .name = "Sol", .texture = try Texture.from_png(sol_png), .radius = 5.0, .orbit_radius = 0, .orbit_speed = 0, .orbit_phase = 0, .spin_speed = 0.2, .parent = null },
+        .{ .name = "Tierra", .texture = try Texture.from_png(tierra_png), .radius = 2.2, .orbit_radius = 18, .orbit_speed = 0.35, .orbit_phase = 0.0, .spin_speed = 1.5, .parent = null },
+        .{ .name = "Luna", .texture = try Texture.from_png(luna_png), .radius = 0.6, .orbit_radius = 4.2, .orbit_speed = 1.6, .orbit_phase = 1.0, .spin_speed = 1.6, .parent = 1 },
+        .{ .name = "Marte", .texture = try Texture.from_png(marte_png), .radius = 1.6, .orbit_radius = 28, .orbit_speed = 0.25, .orbit_phase = 2.2, .spin_speed = 1.4, .parent = null },
+        .{ .name = "Jupiter", .texture = try Texture.from_png(jupiter_png), .radius = 4.2, .orbit_radius = 44, .orbit_speed = 0.14, .orbit_phase = 4.0, .spin_speed = 2.5, .parent = null },
+    };
+    var positions: [bodies.len]Vec3 = undefined;
 
     var fb = Framebuffer.init(WIDTH, HEIGHT, .black, .white);
     defer fb.deinit();
 
     var depth = try DepthBuffer.init(gpa, WIDTH, HEIGHT);
 
-    // Cámara en (0, 0, 6) mirando al origen; FOV de 60 grados (1.0472 rad)
-    const cam = Camera.look_at(Vec3.init(0, 0, 6), Vec3.init(0, 0, 0), Vec3.init(0, 1, 0), 1.0472, 0.1);
+    // Cámara fija, arriba y atrás, mirando al Sol; FOV de 60 grados (1.0472 rad)
+    const cam = Camera.look_at(Vec3.init(0, 32, 75), Vec3.init(0, 0, 0), Vec3.init(0, 1, 0), 1.0472, 0.1);
 
-    var angle: f32 = 0;
+    var time: f32 = 0;
     var dt: f32 = 0;
     var frame_start = Clock.now(init.io);
     var fps_time: f32 = 0;
@@ -61,11 +75,14 @@ pub fn main(init: std.process.Init) !void {
             fps_frames = 0;
         }
 
-        angle += dt * 0.6; // radianes por segundo
+        time += dt;
+        system.update_positions(&bodies, time, &positions);
 
         fb.clear();
         depth.clear();
-        _ = try draw_mesh(&fb, &depth, cam, esfera, Vec3.init(0, 0, 0), 2.0, angle, tierra, scratch);
+        for (bodies, 0..) |b, i| {
+            _ = try draw_mesh(&fb, &depth, cam, esfera, positions[i], b.radius, b.spin_speed * time, b.texture, scratch);
+        }
         try fb.swap_buffers();
     }
 }
