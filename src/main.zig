@@ -23,6 +23,7 @@ const MOUSE_SENSITIVITY: f32 = 0.0025;
 const SPEED: f32 = 12.0; // unidades por segundo
 const SPEED_FAST: f32 = 40.0; // con Shift
 const STAR_COUNT: usize = 4000; //Estrellas
+const COLLISION_MARGIN: f32 = 2.0; // distancia mínima entre la cámara y la superficie de un cuerpo
 
 const Clock = std.Io.Clock.real;
 
@@ -117,6 +118,7 @@ pub fn main(init: std.process.Init) !void {
         const speed: f32 = if (rl.isKeyDown(.left_shift)) SPEED_FAST else SPEED;
         const step = @min(dt, 0.05); // un tirón no debe lanzar la cámara lejos
         cam_pos = cam_pos.add(move.scale(speed * step));
+        cam_pos = system.push_out(&bodies, &positions, cam_pos, COLLISION_MARGIN);
 
         const cam = Camera.from_angles(cam_pos, yaw, pitch, FOV, NEAR);
 
