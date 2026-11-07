@@ -1,4 +1,5 @@
 const rl = @import("raylib");
+const std = @import("std");
 
 pub const Texture = struct {
     width: i32,
@@ -12,6 +13,13 @@ pub const Texture = struct {
         defer rl.unloadImage(img);
         const colors = try rl.loadImageColors(img);
         return .{ .width = img.width, .height = img.height, .pixels = colors };
+    }
+
+    /// Textura de 1x1 píxel de un solo color (para cuerpos sin textura, como la nave).
+    pub fn solid(gpa: std.mem.Allocator, color: rl.Color) !Texture {
+        const px = try gpa.alloc(rl.Color, 1);
+        px[0] = color;
+        return .{ .width = 1, .height = 1, .pixels = px };
     }
 
     /// Color de la textura en (u, v). u se repite; v se limita a [0, 1].

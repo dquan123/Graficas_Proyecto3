@@ -12,6 +12,7 @@ const load_obj = @import("obj.zig").load_obj;
 const system = @import("system.zig");
 const Body = system.Body;
 const stars_mod = @import("stars.zig");
+const render = @import("render.zig");
 
 const WIDTH: i32 = 800;
 const HEIGHT: i32 = 600;
@@ -24,6 +25,17 @@ const SPEED: f32 = 12.0; // unidades por segundo
 const SPEED_FAST: f32 = 40.0; // con Shift
 const STAR_COUNT: usize = 4000; //Estrellas
 const COLLISION_MARGIN: f32 = 2.0; // distancia mínima entre la cámara y la superficie de un cuerpo
+
+// La nave
+const SHIP_SCALE: f32 = 0.10; // el modelo mide ~7 unidades; así queda de ~0.7
+const SHIP_DISTANCE: f32 = 2.6; // qué tan adelante de la cámara
+const SHIP_DROP: f32 = 0.55; // qué tan abajo de la cámara
+const SHIP_FOLLOW: f32 = 8.0; // qué tan rápido alcanza la orientación de la cámara
+const SHIP_AMBIENT: f32 = 0.30;
+const SHIP_NOSE = Vec3.init(0, 1, 0); // eje del modelo hacia donde apunta la nariz
+const SHIP_TOP = Vec3.init(0, 0, 1); // eje del modelo que es "arriba"
+
+const nave_obj = @embedFile("assets/nave_espacial.obj");
 
 const Clock = std.Io.Clock.real;
 
@@ -39,7 +51,14 @@ pub fn main(init: std.process.Init) !void {
     const gpa = std.heap.page_allocator;
 
     const esfera = try load_obj(gpa, esfera_obj);
-    const scratch = try Scratch.init(gpa, esfera.positions.len);
+    const nave = try load_obj(gpa, nave_obj);
+    const scratch = try Scratch.init(gpa, @max(esfera.positions.len, nave.positions.len));
+    const nave_tex = try Texture.solid(gpa, .{ .r = 200, .g = 205, .b = 215, .a = 255 });
+    const nave_axes = render.ModelAxes{
+        .center = render.bbox_center(nave.positions),
+        .nose = SHIP_NOSE,
+        .top = SHIP_TOP,
+    };
 
     rl.setTraceLogLevel(.warning);
     rl.initWindow(WIDTH, HEIGHT, "Space Travel");
@@ -68,6 +87,8 @@ pub fn main(init: std.process.Init) !void {
     var yaw: f32 = 0;
     var pitch: f32 = -0.4;
     var warmup: u32 = 3; // cuadros iniciales en los que se ignora el mouse
+    var ship_yaw: f32 = 0; // orientación suavizada de la nave
+    var ship_pitch: f32 = -0.4;
 
     var time: f32 = 0;
     var dt: f32 = 0;
@@ -135,6 +156,26 @@ pub fn main(init: std.process.Init) !void {
             };
             _ = try draw_mesh(&fb, &depth, cam, esfera, positions[i], b.radius, b.spin_speed * time, b.texture, light, scratch);
         }
+        // --- La nave ---
+        // Su orientación persigue a la de la cámara con un pequeño retraso
+        const follow = 1.0 - @exp(-SHIP_FOLLOW * dt);
+        ship_yaw += (yaw - ship_yaw) * follow;
+        ship_pitch += (pitch - ship_pitch) * follow;
+        const ship_axes = Camera.from_angles(Vec3.init(0, 0, 0), ship_yaw, ship_pitch, FOV, NEAR);
+
+        // Siempre delante y un poco abajo de la cámara
+        const ship_pos = cam.position.add(cam.forward.scale(SHIP_DISTANCE)).add(cam.up.scale(-SHIP_DROP));
+        const ship_light = Light{
+            .dir = positions[0].sub(ship_pos).normalize(),
+            .ambient = SHIP_AMBIENT,
+        };
+
+        depth.clear(); // la nave siempre se ve encima, aunque un planeta esté cerca
+        _ = try render.draw_ship(&fb, &depth, cam, nave, nave_axes, .{
+            .origin = ship_pos,
+            .frame = .{ .right = ship_axes.right, .up = ship_axes.up, .forward = ship_axes.forward },
+            .scale = SHIP_SCALE,
+        }, nave_tex, ship_light, scratch);
         try fb.swap_buffers();
     }
 }
